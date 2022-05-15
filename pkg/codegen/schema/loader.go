@@ -1,15 +1,19 @@
 package schema
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
+	"github.com/edsrzf/mmap-go"
+	"github.com/segmentio/encoding/json"
+
 	"github.com/blang/semver"
-	jsoniter "github.com/json-iterator/go"
 
 	"github.com/pulumi/pulumi/sdk/v3/go/common/resource/plugin"
 	"github.com/pulumi/pulumi/sdk/v3/go/common/tokens"
@@ -26,6 +30,8 @@ type pluginLoader struct {
 
 	host    plugin.Host
 	entries map[string]*Package
+	files   []*os.File
+	mmaps   []mmap.MMap
 }
 
 func NewPluginLoader(host plugin.Host) Loader {
@@ -136,24 +142,16 @@ func (l *pluginLoader) LoadPackage(pkg string, version *semver.Version) (*Packag
 		return p, nil
 	}
 
-	if err := l.ensurePlugin(pkg, version); err != nil {
-		return nil, err
-	}
-
-	provider, err := l.host.Provider(tokens.Package(pkg), version)
+	schemaBytes, provider, err := l.loadSchemaBytes(pkg, version)
 	if err != nil {
-		return nil, err
-	}
-	contract.Assert(provider != nil)
-
-	schemaFormatVersion := 0
-	schemaBytes, err := provider.GetSchema(schemaFormatVersion)
-	if err != nil {
+		fmt.Printf("🚀🚀🚀🚀 error loading schema bytes: %v\n", err)
 		return nil, err
 	}
 
 	var spec PackageSpec
-	if err := jsoniter.Unmarshal(schemaBytes, &spec); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(schemaBytes))
+	decoder.ZeroCopy()
+	if err := decoder.Decode(&spec); err != nil {
 		return nil, err
 	}
 
@@ -165,7 +163,7 @@ func (l *pluginLoader) LoadPackage(pkg string, version *semver.Version) (*Packag
 		return nil, diags
 	}
 	// Insert a version into the bound schema if the package does not provide one
-	if p.Version == nil {
+	if provider != nil && p.Version == nil {
 		if version == nil {
 			providerInfo, err := provider.GetPluginInfo()
 			if err == nil {
@@ -185,4 +183,73 @@ func (l *pluginLoader) LoadPackage(pkg string, version *semver.Version) (*Packag
 	l.entries[key] = p
 
 	return p, nil
+}
+
+func (l *pluginLoader) loadSchemaBytes(pkg string, version *semver.Version) ([]byte, plugin.Provider, error) {
+	cachedVersion := version
+	if version == nil {
+		cachedVersion = &semver.Version{Major: 1}
+	}
+	cachedDir := fmt.Sprintf("%v-%v.json", pkg, cachedVersion.String())
+	cachedPath := filepath.Join("/home/friel/.pulumi/schemas", cachedDir)
+
+	schemaBytes, ok := l.LoadCachedSchemaBytes(pkg, version, cachedPath)
+	if ok {
+		return schemaBytes, nil, nil
+	}
+
+	schemaBytes, provider, err := l.loadPluginSchemaBytes(pkg, version)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	err = os.MkdirAll(cachedDir, 0755)
+	if err != nil {
+		fmt.Printf("💥💥💥💥💥💥 error creating dirs: %v", err)
+	} else {
+		err := os.WriteFile(cachedPath, schemaBytes, 0644)
+		if err != nil {
+			fmt.Printf("💥💥💥💥💥💥 error writing file to cache: %v", err)
+		}
+	}
+
+	return schemaBytes, provider, nil
+
+}
+
+func (l *pluginLoader) loadPluginSchemaBytes(pkg string, version *semver.Version) ([]byte, plugin.Provider, error) {
+	if err := l.ensurePlugin(pkg, version); err != nil {
+		return nil, nil, err
+	}
+
+	provider, err := l.host.Provider(tokens.Package(pkg), version)
+	if err != nil {
+		return nil, nil, err
+	}
+	contract.Assert(provider != nil)
+
+	schemaFormatVersion := 0
+	schemaBytes, err := provider.GetSchema(schemaFormatVersion)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return schemaBytes, provider, nil
+}
+
+func (l *pluginLoader) LoadCachedSchemaBytes(pkg string, version *semver.Version, path string) ([]byte, bool) {
+	schemaFile, err := os.OpenFile(path, os.O_RDONLY, 0644)
+	if err != nil {
+		return nil, false
+	}
+	schemaMmap, err := mmap.Map(schemaFile, mmap.RDONLY, 0)
+	if err != nil {
+		schemaFile.Close()
+		return nil, false
+	}
+
+	l.files = append(l.files, schemaFile)
+	l.mmaps = append(l.mmaps, schemaMmap)
+
+	return schemaMmap, true
 }
