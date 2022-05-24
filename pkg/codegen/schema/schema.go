@@ -840,6 +840,16 @@ func (pkg *Package) ImportLanguages(languages map[string]Language) error {
 	return nil
 }
 
+func (pkg *Package) Equals(other *Package) bool {
+	if pkg == other {
+		return true
+	}
+	if pkg.Name != other.Name || (pkg.Version == nil) != (other.Version == nil) {
+		return false
+	}
+	return pkg.Version == nil && other.Version == nil || pkg.Version.Equals(*other.Version)
+}
+
 var defaultModuleFormat = regexp.MustCompile("(.*)")
 
 func (pkg *Package) TokenToModule(tok string) string {
