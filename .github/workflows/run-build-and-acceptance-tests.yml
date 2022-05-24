@@ -172,6 +172,7 @@ jobs:
     uses: t0yv0/pulumi/.github/workflows/build.yml@t0yv0/simpler-build-yml
     with:
       enable-coverage: true
+      goreleaser-flags: -p 3 --skip-validate
 
   test-linux:
     name: Test Linux
