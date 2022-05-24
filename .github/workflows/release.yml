@@ -340,14 +340,10 @@ jobs:
           cd sdk/dotnet && make lint
   build:
     name: Build
-    uses: pulumi/pulumi/.github/workflows/build.yml@master
+    uses: ./.github/workflows/build.yml
     with:
-      # Cross-compiling from ubuntu-latest is faster but the artifact
-      # checksums will not match what publish-binaries expects.
-      default-build-platform: macos-latest
       enable-coverage: false
-      goreleaser-config: '.goreleaser.yml'
-      goreleaser-flags: '-p 3 --release-notes=CHANGELOG_PENDING.md --skip-publish --skip-announce --skip-validate'
+      goreleaser-flags: -p 3
   test-linux:
     name: Test Linux
     needs: build
