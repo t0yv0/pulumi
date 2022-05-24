@@ -169,7 +169,7 @@ jobs:
 
   build:
     name: Build
-    uses: t0yv0/pulumi/.github/workflows/build.yml@t0yv0/simpler-build-yml
+    uses: ./.github/workflows/build.yml
     with:
       enable-coverage: true
       goreleaser-flags: -p 3 --skip-validate
