@@ -1,6 +1,16 @@
 CHANGELOG
 =========
 
+## 3.35.2 (2022-06-24)
+
+### Improvements
+
+Many
+
+### Bug Fixes
+
+Some
+
 ## 3.35.1 (2022-06-23)
 
 ### Improvements
